@@ -1,5 +1,6 @@
 HELP.md
 .gradle
+.DS_Store
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
@@ -37,7 +38,7 @@ out/
 .vscode/
 
 ### Secrets ###
-*.env
+*.env*
 .env
 
 ### Claude Code ###
