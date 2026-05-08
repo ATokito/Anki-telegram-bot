@@ -1,4 +1,4 @@
-package com.github.atokito.anki_telegram_bot;
+package anki_telegram_bot;
 
 import org.springframework.stereotype.Component;
 

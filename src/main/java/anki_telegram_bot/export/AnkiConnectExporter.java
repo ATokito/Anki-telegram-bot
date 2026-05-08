@@ -1,9 +1,9 @@
-package com.github.atokito.anki_telegram_bot.export;
+package anki_telegram_bot.export;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.atokito.anki_telegram_bot.Language;
-import com.github.atokito.anki_telegram_bot.cards.CardData;
+import anki_telegram_bot.Language;
+import anki_telegram_bot.cards.CardData;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;

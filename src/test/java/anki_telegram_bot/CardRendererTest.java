@@ -1,7 +1,7 @@
-package com.github.atokito.anki_telegram_bot;
+package anki_telegram_bot;
 
-import com.github.atokito.anki_telegram_bot.cards.CardData;
-import com.github.atokito.anki_telegram_bot.cards.CardRenderer;
+import anki_telegram_bot.cards.CardData;
+import anki_telegram_bot.cards.CardRenderer;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
