@@ -1,10 +1,10 @@
-package com.github.atokito.anki_telegram_bot;
+package anki_telegram_bot;
 
-import com.github.atokito.anki_telegram_bot.cards.CardData;
-import com.github.atokito.anki_telegram_bot.cards.CardRenderer;
-import com.github.atokito.anki_telegram_bot.cards.GeminiCardService;
-import com.github.atokito.anki_telegram_bot.export.AnkiConnectExporter;
-import com.github.atokito.anki_telegram_bot.export.ToFileExporter;
+import anki_telegram_bot.cards.CardData;
+import anki_telegram_bot.cards.CardRenderer;
+import anki_telegram_bot.cards.GeminiCardService;
+import anki_telegram_bot.export.AnkiConnectExporter;
+import anki_telegram_bot.export.ToFileExporter;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

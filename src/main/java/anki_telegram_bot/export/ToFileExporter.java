@@ -1,6 +1,6 @@
-package com.github.atokito.anki_telegram_bot.export;
+package anki_telegram_bot.export;
 
-import com.github.atokito.anki_telegram_bot.cards.CardData;
+import anki_telegram_bot.cards.CardData;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
