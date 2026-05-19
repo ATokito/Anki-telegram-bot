@@ -320,7 +320,7 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
                         } catch (Exception e) {
                             answerCallback(callback.getId(), "");
                             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                            sendText(chatId, "❌ Ошибка: " + msg);
+                            sendText(chatId, "❌ " + msg);
                         }
                     }
                 }

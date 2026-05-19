@@ -75,7 +75,13 @@ public class AnkiConnectExporter implements CardExporter {
         JsonNode root = objectMapper.readTree(response.body());
         String error = root.path("error").asText();
         if (!error.equals("null") && !error.isBlank()) {
-            throw new RuntimeException(error);
+            if (error.contains("model was not found")) {
+                throw new RuntimeException("Тип карточки не найден. Проверь ANKI_MODEL_NAME");
+            } else if (error.contains("deck was not found")) {
+                throw new RuntimeException("Колода не найдена. Проверь DECK_NAME_JP / DECK_NAME_ENG");
+            } else {
+                throw new RuntimeException("Не удалось сохранить карточку в Anki");
+            }
         }
 
         trySync();

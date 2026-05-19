@@ -148,7 +148,7 @@ public class GeminiCardService {
 
         JsonNode candidates = root.path("candidates");
         if (candidates.isMissingNode() || candidates.isEmpty()) {
-            throw new RuntimeException("Gemini API error: " + response.body());
+            throw new RuntimeException("Не удалось получить ответ от Gemini");
         }
 
         JsonNode parts = candidates.get(0).path("content").path("parts");
