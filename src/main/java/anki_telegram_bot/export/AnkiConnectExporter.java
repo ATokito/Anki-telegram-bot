@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import anki_telegram_bot.Language;
 import anki_telegram_bot.cards.CardData;
+import anki_telegram_bot.cards.CardFormat;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -17,7 +18,7 @@ import java.time.Duration;
 
 @Slf4j
 @Component
-public class AnkiConnectExporter {
+public class AnkiConnectExporter implements CardExporter {
 
     @Value("${anki.connect.url:http://localhost:8765}")
     private String ankiConnectUrl;
@@ -36,9 +37,10 @@ public class AnkiConnectExporter {
             .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public void export(CardData card) throws Exception {
-        String front = card.formatFront();
-        String back = card.formatBackHtml();
+    @Override
+    public void save(CardData card, CardFormat format) throws Exception {
+        String front = format.formatFront(card);
+        String back = format.formatBackHtml(card);
 
         String deckName = card.getSecondLanguage() == Language.JAPANESE ? japaneseDeck : englishDeck;
 
@@ -75,9 +77,19 @@ public class AnkiConnectExporter {
         if (!error.equals("null") && !error.isBlank()) {
             throw new RuntimeException(error);
         }
+
+        trySync();
     }
 
-    public void sync() throws Exception {
+    private void trySync() {
+        try {
+            sync();
+        } catch (Exception e) {
+            log.warn("Anki sync failed (card was saved): {}", e.getMessage());
+        }
+    }
+
+    private void sync() throws Exception {
         var requestBody = objectMapper.createObjectNode();
         requestBody.put("action", "sync");
         requestBody.put("version", 6);

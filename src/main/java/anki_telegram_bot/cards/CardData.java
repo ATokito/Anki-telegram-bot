@@ -14,17 +14,9 @@ public class CardData {
     private String exampleReading;
     private String exampleTranslation;
 
-    public String formatFront() {
+    public String getWordWithReading() {
         return reading == null || reading.isBlank()
                 ? word
                 : word + " (" + reading + ")";
-    }
-
-    public String formatBackHtml() {
-        String exRead = exampleReading != null && !exampleReading.isBlank()
-                ? "<br>" + exampleReading : "";
-        String exTrans = exampleTranslation != null && !exampleTranslation.isBlank()
-                ? "<br>" + exampleTranslation : "";
-        return translation + "<br><br>" + example + exRead + exTrans;
     }
 }

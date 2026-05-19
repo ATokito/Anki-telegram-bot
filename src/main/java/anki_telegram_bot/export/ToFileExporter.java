@@ -1,22 +1,23 @@
 package anki_telegram_bot.export;
 
 import anki_telegram_bot.cards.CardData;
+import anki_telegram_bot.cards.CardFormat;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.FileWriter;
-import java.io.IOException;
 import java.io.PrintWriter;
 
 @Component
-public class ToFileExporter {
+public class ToFileExporter implements CardExporter {
 
     @Value("${anki.export.path:anki_cards.txt}")
     private String exportPath;
 
-    public void export(CardData card) throws IOException {
+    @Override
+    public void save(CardData card, CardFormat format) throws Exception {
         try (PrintWriter writer = new PrintWriter(new FileWriter(exportPath, true))) {
-            writer.println(card.formatFront() + "\t" + card.formatBackHtml());
+            writer.println(format.formatFront(card) + "\t" + format.formatBackHtml(card));
         }
     }
 }

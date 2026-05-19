@@ -1,10 +1,12 @@
 package anki_telegram_bot;
 
 import anki_telegram_bot.cards.CardData;
+import anki_telegram_bot.cards.CardFormat;
 import anki_telegram_bot.cards.CardRenderer;
+import anki_telegram_bot.cards.DirectFormat;
 import anki_telegram_bot.cards.GeminiCardService;
-import anki_telegram_bot.export.AnkiConnectExporter;
-import anki_telegram_bot.export.ToFileExporter;
+import anki_telegram_bot.cards.ReverseFormat;
+import anki_telegram_bot.export.CardExporter;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +25,6 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,9 +41,14 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
     @Autowired
     private CardRenderer cardRenderer;
     @Autowired
-    private ToFileExporter toFileExporter;
+    private List<CardExporter> exporters;
     @Autowired
-    private AnkiConnectExporter ankiConnectExporter;
+    private DirectFormat directFormat;
+    @Autowired
+    private ReverseFormat reverseFormat;
+
+    private volatile CardFormat cardFormat;
+    private volatile LanguageMode languageMode;
 
     private final Map<Long, CardData> pendingCards = new ConcurrentHashMap<>();
     private final Map<Long, String> pendingWords = new ConcurrentHashMap<>();
@@ -59,6 +65,8 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
 
     @PostConstruct
     public void init() {
+        cardFormat = reverseFormat;
+        languageMode = LanguageMode.MULTILINGUAL;
         try {
             TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
             botsApi.registerBot(this);
@@ -94,19 +102,89 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
                 return;
             }
 
-            Language lang = detector.detect(text);
-            pendingWords.put(chatId, text);
-            pendingLangs.put(chatId, lang);
+            if (text.startsWith("/card")) {
+                try {
+                    sendCardFormatKeyboard(chatId);
+                } catch (TelegramApiException e) {
+                    log.error("Failed to send card format keyboard", e);
+                }
+                return;
+            }
 
-            try {
-                sendTranslationKeyboard(chatId, lang);
-            } catch (TelegramApiException e) {
-                log.error("Failed to send translation keyboard", e);
+            if (text.startsWith("/mode")) {
+                try {
+                    sendLanguageModeKeyboard(chatId);
+                } catch (TelegramApiException e) {
+                    log.error("Failed to send language mode keyboard", e);
+                }
+                return;
+            }
+
+            if (text.startsWith("/help")) {
+                try {
+                    sendText(chatId, "Отправь слово — получи карточку для Anki с переводом и примером.\n\n/card — формат карточки\n/mode — пара языков");
+                } catch (TelegramApiException e) {
+                    log.error("Failed to send help message", e);
+                }
+                return;
+            }
+
+            Language sourceLang = detector.detect(text);
+            Language targetLang = resolveTargetLang(sourceLang);
+
+            if (targetLang != null) {
+                try {
+                    generateAndShowCard(chatId, text, sourceLang, targetLang);
+                } catch (TelegramApiException e) {
+                    log.error("Failed to generate card", e);
+                }
+            } else {
+                pendingWords.put(chatId, text);
+                pendingLangs.put(chatId, sourceLang);
+                try {
+                    sendTranslationKeyboard(chatId, sourceLang);
+                } catch (TelegramApiException e) {
+                    log.error("Failed to send translation keyboard", e);
+                }
             }
         }
 
         if (update.hasCallbackQuery()) {
             handleCallback(update.getCallbackQuery());
+        }
+    }
+
+    private Language resolveTargetLang(Language sourceLang) {
+        return switch (languageMode) {
+            case RU_JP -> {
+                if (sourceLang == Language.RUSSIAN) yield Language.JAPANESE;
+                if (sourceLang == Language.JAPANESE) yield Language.RUSSIAN;
+                yield null;
+            }
+            case RU_EN -> {
+                if (sourceLang == Language.RUSSIAN) yield Language.ENGLISH;
+                if (sourceLang == Language.ENGLISH) yield Language.RUSSIAN;
+                yield null;
+            }
+            case MULTILINGUAL -> null;
+        };
+    }
+
+    private void generateAndShowCard(long chatId, String word, Language sourceLang, Language targetLang) throws TelegramApiException {
+        int loadingMessageId = sendText(chatId, "⏳ Перевод выполняется...").getMessageId();
+        try {
+            CardData card = cardService.generateCard(word, sourceLang, targetLang);
+            pendingCards.put(chatId, card);
+            deleteMessage(chatId, loadingMessageId);
+            String reply = cardRenderer.render(card, cardFormat);
+            SendMessage message = new SendMessage();
+            message.setChatId(chatId);
+            message.setText(reply);
+            message.setReplyMarkup(buildKeyboard());
+            execute(message);
+        } catch (RuntimeException e) {
+            deleteMessage(chatId, loadingMessageId);
+            sendText(chatId, "❌ " + e.getMessage());
         }
     }
 
@@ -117,10 +195,79 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
         InlineKeyboardButton skipButton = new InlineKeyboardButton("✕ Пропустить");
         skipButton.setCallbackData("skip");
 
-        List<InlineKeyboardButton> row = List.of(addButton, skipButton);
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(List.of(row));
+        markup.setKeyboard(List.of(List.of(addButton, skipButton)));
         return markup;
+    }
+
+    private void sendCardFormatKeyboard(long chatId) throws TelegramApiException {
+        String current = cardFormat == reverseFormat ? "Основной → Изучаемый" : "Изучаемый → Основной";
+
+        CardData example = new CardData();
+        if (languageMode == LanguageMode.RU_JP) {
+            example.setWord("勉強");
+            example.setReading("べんきょう");
+            example.setTranslation("учёба");
+            example.setExample("毎日勉強する");
+            example.setExampleReading("まいにちべんきょうする");
+            example.setExampleTranslation("Я учусь каждый день");
+        } else {
+            example.setWord("study");
+            example.setReading("ˈstʌdi");
+            example.setTranslation("учёба");
+            example.setExample("I study every day.");
+            example.setExampleReading("");
+            example.setExampleTranslation("Я учусь каждый день.");
+        }
+
+        String text = "Текущий формат: " + current + "\n\n" +
+                "Изучаемый → Основной:\n" +
+                "Front: " + directFormat.formatFront(example) + "\n" +
+                "Back: " + directFormat.formatBackHtml(example).replace("<br>", "\n") + "\n\n" +
+                "Основной → Изучаемый:\n" +
+                "Front: " + reverseFormat.formatFront(example) + "\n" +
+                "Back: " + reverseFormat.formatBackHtml(example).replace("<br>", "\n");
+
+        InlineKeyboardButton directBtn = new InlineKeyboardButton("Изучаемый → Основной");
+        directBtn.setCallbackData("card_direct");
+
+        InlineKeyboardButton reverseBtn = new InlineKeyboardButton("Основной → Изучаемый");
+        reverseBtn.setCallbackData("card_reverse");
+
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(List.of(directBtn, reverseBtn)));
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(text);
+        message.setReplyMarkup(markup);
+        execute(message);
+    }
+
+    private void sendLanguageModeKeyboard(long chatId) throws TelegramApiException {
+        String current = switch (languageMode) {
+            case MULTILINGUAL -> "Многоязычный";
+            case RU_JP -> "RU ↔ JP";
+            case RU_EN -> "RU ↔ EN";
+        };
+
+        InlineKeyboardButton multiBtn = new InlineKeyboardButton("🌍 Многоязычный");
+        multiBtn.setCallbackData("lang_multilingual");
+
+        InlineKeyboardButton ruJpBtn = new InlineKeyboardButton("RU ↔ JP");
+        ruJpBtn.setCallbackData("lang_ru_jp");
+
+        InlineKeyboardButton ruEnBtn = new InlineKeyboardButton("RU ↔ EN");
+        ruEnBtn.setCallbackData("lang_ru_en");
+
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(List.of(multiBtn, ruJpBtn, ruEnBtn)));
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText("Текущий режим: " + current + "\n\nВыбери пару языков:");
+        message.setReplyMarkup(markup);
+        execute(message);
     }
 
     private void sendTranslationKeyboard(long chatId, Language sourceLang) throws TelegramApiException {
@@ -163,19 +310,49 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
                     CardData card = pendingCards.get(chatId);
                     if (card != null) {
                         try {
-                            toFileExporter.export(card);
-                            ankiConnectExporter.export(card);
-                            ankiConnectExporter.sync();
+                            for (CardExporter exporter : exporters) {
+                                exporter.save(card, cardFormat);
+                            }
                             pendingCards.remove(chatId);
                             removeKeyboard(chatId, messageId);
                             sendText(chatId, "✓ Карточка сохранена");
                             answerCallback(callback.getId(), "");
-                        } catch (IOException e) {
-                            sendText(chatId, "Ошибка сохранения");
                         } catch (Exception e) {
-                            sendText(chatId, "❌ Ошибка: " + e.getMessage());
+                            answerCallback(callback.getId(), "");
+                            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                            sendText(chatId, "❌ Ошибка: " + msg);
                         }
                     }
+                }
+                case "card_direct" -> {
+                    cardFormat = directFormat;
+                    deleteMessage(chatId, messageId);
+                    sendText(chatId, "Формат: Изучаемый → Основной");
+                    answerCallback(callback.getId(), "");
+                }
+                case "card_reverse" -> {
+                    cardFormat = reverseFormat;
+                    deleteMessage(chatId, messageId);
+                    sendText(chatId, "Формат: Основной → Изучаемый");
+                    answerCallback(callback.getId(), "");
+                }
+                case "lang_multilingual" -> {
+                    languageMode = LanguageMode.MULTILINGUAL;
+                    deleteMessage(chatId, messageId);
+                    sendText(chatId, "Режим: Многоязычный");
+                    answerCallback(callback.getId(), "");
+                }
+                case "lang_ru_jp" -> {
+                    languageMode = LanguageMode.RU_JP;
+                    deleteMessage(chatId, messageId);
+                    sendText(chatId, "Режим: RU ↔ JP");
+                    answerCallback(callback.getId(), "");
+                }
+                case "lang_ru_en" -> {
+                    languageMode = LanguageMode.RU_EN;
+                    deleteMessage(chatId, messageId);
+                    sendText(chatId, "Режим: RU ↔ EN");
+                    answerCallback(callback.getId(), "");
                 }
                 case "skip" -> {
                     pendingCards.remove(chatId);
@@ -190,36 +367,10 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
                         Language sourceLang = pendingLangs.get(chatId);
                         if (word != null) {
                             answerCallback(callback.getId(), "");
-
-                            DeleteMessage delete = new DeleteMessage();
-                            delete.setChatId(chatId);
-                            delete.setMessageId(messageId);
-                            execute(delete);
-
-                            int loadingMessageId = sendText(chatId, "⏳ Перевод выполняется...").getMessageId();
-                            try {
-                                CardData card = cardService.generateCard(word, sourceLang, targetLang);
-                                pendingCards.put(chatId, card);
-
-                                DeleteMessage deleteLoading = new DeleteMessage();
-                                deleteLoading.setChatId(chatId);
-                                deleteLoading.setMessageId(loadingMessageId);
-                                execute(deleteLoading);
-
-                                String reply = cardRenderer.render(card);
-                                SendMessage message = new SendMessage();
-                                message.setChatId(chatId);
-                                message.setText(reply);
-                                message.setReplyMarkup(buildKeyboard());
-                                execute(message);
-                                pendingWords.remove(chatId);
-                                pendingLangs.remove(chatId);
-                            } catch (RuntimeException e) {
-                                deleteMessage(chatId, loadingMessageId);
-                                sendText(chatId, "❌ " + e.getMessage());
-                                pendingWords.remove(chatId);
-                                pendingLangs.remove(chatId);
-                            }
+                            deleteMessage(chatId, messageId);
+                            pendingWords.remove(chatId);
+                            pendingLangs.remove(chatId);
+                            generateAndShowCard(chatId, word, sourceLang, targetLang);
                         }
                     }
                 }

@@ -5,15 +5,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class CardRenderer {
 
-    public String render(CardData data) {
-        String wordLine = data.formatFront();
-
-        String exampleLine = data.getExample() +
-                (data.getExampleReading() != null && !data.getExampleReading().isBlank()
-                        ? "\n" + data.getExampleReading() : "") +
-                (data.getExampleTranslation() != null && !data.getExampleTranslation().isBlank()
-                        ? "\n" + data.getExampleTranslation() : "");
-
-        return wordLine + "\n" + data.getTranslation() + "\n\n" + exampleLine;
+    public String render(CardData data, CardFormat format) {
+        String front = format.formatFront(data);
+        String back = format.formatBackHtml(data)
+                .replace("<br><br>", "\n\n")
+                .replace("<br>", "\n");
+        return front + "\n" + back;
     }
 }
