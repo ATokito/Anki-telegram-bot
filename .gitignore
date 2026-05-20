@@ -7,6 +7,7 @@ build/
 !**/src/test/**/build/
 
 ### STS ###
+.run/params
 .apt_generated
 .classpath
 .factorypath
