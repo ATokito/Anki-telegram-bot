@@ -3,7 +3,6 @@ package anki_telegram_bot;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -14,17 +13,24 @@ import java.io.IOException;
 @Service
 public class BotSettingsService {
 
-    @Value("${bot.settings.path:bot-settings.json}")
-    private String settingsPath;
+    @Value("${bot.settings.path:}")
+    private String settingsPathOverride;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private BotSettings settings;
 
+    private File settingsFile() {
+        if (settingsPathOverride != null && !settingsPathOverride.isBlank()) {
+            return new File(settingsPathOverride);
+        }
+        return new File(System.getProperty("user.home"), ".anki-tg-bot/settings.json");
+    }
+
     @PostConstruct
     public void load() {
-        File file = new File(settingsPath);
+        File file = settingsFile();
+        log.info("Файл настроек: {}", file.getAbsolutePath());
         if (file.exists()) {
             try {
                 settings = objectMapper.readValue(file, BotSettings.class);
@@ -34,6 +40,8 @@ public class BotSettingsService {
             } catch (IOException e) {
                 log.warn("Не удалось прочитать файл настроек, используются значения по умолчанию", e);
             }
+        } else {
+            log.info("Файл настроек не найден, используются значения по умолчанию");
         }
         settings = new BotSettings();
     }
@@ -43,10 +51,14 @@ public class BotSettingsService {
     }
 
     public void save() {
+        File file = settingsFile();
         try {
-            objectMapper.writeValue(new File(settingsPath), settings);
+            file.getParentFile().mkdirs();
+            objectMapper.writeValue(file, settings);
+            log.info("Настройки сохранены: cardFormat={}, languageMode={}",
+                    settings.getCardFormat(), settings.getLanguageMode());
         } catch (IOException e) {
-            log.error("Не удалось сохранить настройки", e);
+            log.error("Не удалось сохранить настройки в {}", file.getAbsolutePath(), e);
         }
     }
 }
