@@ -46,9 +46,8 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
     private DirectFormat directFormat;
     @Autowired
     private ReverseFormat reverseFormat;
-
-    private volatile CardFormat cardFormat;
-    private volatile LanguageMode languageMode;
+    @Autowired
+    private BotSettingsService botSettingsService;
 
     private final Map<Long, CardData> pendingCards = new ConcurrentHashMap<>();
     private final Map<Long, String> pendingWords = new ConcurrentHashMap<>();
@@ -63,10 +62,20 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
     @Value("${bot.allowed.chat.id}")
     private long allowedChatId;
 
+    private CardFormat cardFormat() {
+        return "direct".equals(botSettingsService.get().getCardFormat()) ? directFormat : reverseFormat;
+    }
+
+    private LanguageMode languageMode() {
+        try {
+            return LanguageMode.valueOf(botSettingsService.get().getLanguageMode());
+        } catch (IllegalArgumentException e) {
+            return LanguageMode.MULTILINGUAL;
+        }
+    }
+
     @PostConstruct
     public void init() {
-        cardFormat = reverseFormat;
-        languageMode = LanguageMode.MULTILINGUAL;
         try {
             TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
             botsApi.registerBot(this);
@@ -130,7 +139,7 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
             }
 
             Language sourceLang = detector.detect(text);
-            Language targetLang = resolveTargetLang(sourceLang);
+            Language targetLang = resolveTargetLang(sourceLang, languageMode());
 
             if (targetLang != null) {
                 try {
@@ -154,7 +163,7 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
         }
     }
 
-    private Language resolveTargetLang(Language sourceLang) {
+    private Language resolveTargetLang(Language sourceLang, LanguageMode languageMode) {
         return switch (languageMode) {
             case RU_JP -> {
                 if (sourceLang == Language.RUSSIAN) yield Language.JAPANESE;
@@ -176,7 +185,7 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
             CardData card = cardService.generateCard(word, sourceLang, targetLang);
             pendingCards.put(chatId, card);
             deleteMessage(chatId, loadingMessageId);
-            String reply = cardRenderer.render(card, cardFormat);
+            String reply = cardRenderer.render(card, cardFormat());
             SendMessage message = new SendMessage();
             message.setChatId(chatId);
             message.setText(reply);
@@ -201,10 +210,10 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
     }
 
     private void sendCardFormatKeyboard(long chatId) throws TelegramApiException {
-        String current = cardFormat == reverseFormat ? "Основной → Изучаемый" : "Изучаемый → Основной";
+        String current = cardFormat() == reverseFormat ? "Основной → Изучаемый" : "Изучаемый → Основной";
 
         CardData example = new CardData();
-        if (languageMode == LanguageMode.RU_JP) {
+        if (languageMode() == LanguageMode.RU_JP) {
             example.setWord("勉強");
             example.setReading("べんきょう");
             example.setTranslation("учёба");
@@ -245,7 +254,7 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
     }
 
     private void sendLanguageModeKeyboard(long chatId) throws TelegramApiException {
-        String current = switch (languageMode) {
+        String current = switch (languageMode()) {
             case MULTILINGUAL -> "Многоязычный";
             case RU_JP -> "RU ↔ JP";
             case RU_EN -> "RU ↔ EN";
@@ -311,7 +320,7 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
                     if (card != null) {
                         try {
                             for (CardExporter exporter : exporters) {
-                                exporter.save(card, cardFormat);
+                                exporter.save(card, cardFormat());
                             }
                             pendingCards.remove(chatId);
                             removeKeyboard(chatId, messageId);
@@ -325,31 +334,36 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
                     }
                 }
                 case "card_direct" -> {
-                    cardFormat = directFormat;
+                    botSettingsService.get().setCardFormat("direct");
+                    botSettingsService.save();
                     deleteMessage(chatId, messageId);
                     sendText(chatId, "Формат: Изучаемый → Основной");
                     answerCallback(callback.getId(), "");
                 }
                 case "card_reverse" -> {
-                    cardFormat = reverseFormat;
+                    botSettingsService.get().setCardFormat("reverse");
+                    botSettingsService.save();
                     deleteMessage(chatId, messageId);
                     sendText(chatId, "Формат: Основной → Изучаемый");
                     answerCallback(callback.getId(), "");
                 }
                 case "lang_multilingual" -> {
-                    languageMode = LanguageMode.MULTILINGUAL;
+                    botSettingsService.get().setLanguageMode("MULTILINGUAL");
+                    botSettingsService.save();
                     deleteMessage(chatId, messageId);
                     sendText(chatId, "Режим: Многоязычный");
                     answerCallback(callback.getId(), "");
                 }
                 case "lang_ru_jp" -> {
-                    languageMode = LanguageMode.RU_JP;
+                    botSettingsService.get().setLanguageMode("RU_JP");
+                    botSettingsService.save();
                     deleteMessage(chatId, messageId);
                     sendText(chatId, "Режим: RU ↔ JP");
                     answerCallback(callback.getId(), "");
                 }
                 case "lang_ru_en" -> {
-                    languageMode = LanguageMode.RU_EN;
+                    botSettingsService.get().setLanguageMode("RU_EN");
+                    botSettingsService.save();
                     deleteMessage(chatId, messageId);
                     sendText(chatId, "Режим: RU ↔ EN");
                     answerCallback(callback.getId(), "");
