@@ -97,10 +97,14 @@ public class WordsToAnkiBot extends TelegramLongPollingBot {
                 ? update.getMessage().getChatId()
                 : update.hasCallbackQuery() ? update.getCallbackQuery().getMessage().getChatId() : -1;
 
-        if (chatId != allowedChatId) return;
+        if (chatId != allowedChatId) {
+            log.warn("Ignored update from unknown chatId={}", chatId);
+            return;
+        }
 
         if (update.hasMessage() && update.getMessage().hasText()) {
             String text = update.getMessage().getText();
+            log.info("Received message: '{}'", text);
 
             if (text.startsWith("/start")) {
                 try {
